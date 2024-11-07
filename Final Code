@@ -1,0 +1,663 @@
+#include <SD.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <MPU6050.h>
+#include <SoftwareSerial.h>
+#include "DFRobotDFPlayerMini.h"
+
+SoftwareSerial softSerial(10,11);
+MPU6050 mpu;
+DFRobotDFPlayerMini myDFPlayer;
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 1);
+
+void setup() 
+{
+  Wire.begin();
+  softSerial.begin(9600);
+  Serial.begin(115200);
+  if (!myDFPlayer.begin(softSerial, true, true)) {
+    Serial.println("DFPlayer initialization failed");
+    while (true)
+      ;
+  }
+  Serial.println("DFPlayer initialized successfully");
+
+  mpu.initialize();  // Initialize MPU6050
+
+
+  // put your setup code here, to run once:
+  // (physical pin) 2 and 3 for transmitting/receiving data 
+  pinMode(0,INPUT);  //RX
+  pinMode(1,OUTPUT);  //TX
+
+  //28 and 27 (physical) for accelerometer
+  pinMode(A5, INPUT); //x
+  pinMode(A4, INPUT);  //y
+
+  //physical pin 14 for button input (craft input)
+  pinMode(8,INPUT);
+  digitalWrite(8,HIGH);
+
+  //Clock pin for OLEDs and SD Card
+  analogWrite(3,200);
+
+  // Joystick
+  pinMode(A0, INPUT);
+  pinMode(A1, INPUT);
+  myDFPlayer.volume(15);  //Set volume value. From 0 to 30
+
+  // 4-pin OLED
+  pinMode(5,OUTPUT);
+
+  // SD Card 
+  pinMode(4, OUTPUT);  //enable
+  pinMode(6, OUTPUT);  // microcontroller to SD Card
+  pinMode(7,INPUT);    // SD Card to microcontroller
+  // save all audio and visual bits to SD card here
+
+  // SD Card setup
+  SD.begin(4);
+
+}
+
+// Input 1: Craft a block 
+// outputs: 
+//inputs: 
+bool craft()
+{
+  myDFPlayer.playMp3Folder(19);
+  // HIGH = off    LOW = on
+  bool pushed;
+  pushed = digitalRead(8);  //reading pin 8 data
+  if(pushed==LOW)
+  {
+    long rand = random(1,2);
+    if(rand==1)
+    {
+      myDFPlayer.playMp3Folder(1);
+    }
+    else
+    {
+      myDFPlayer.playMp3Folder(2);
+    }
+    pushed=1;
+  }
+  return pushed;
+}
+
+// Input 2: Dodge an attack/enemy
+// outputs: 
+// inputs:
+bool dodge(String direction, int i,int enable)
+{
+  bool flag;
+  myDFPlayer.playMp3Folder(20);
+  bool dodged = 0;
+  int xVal = analogRead(A0);
+  int yVal = analogRead(A1);
+
+  if(enable==1)  //boss fight exception
+  {
+    int y=0;
+    while(y<=i)
+    {
+      if((xVal >= 600 && xVal <= 1000) && (yVal >= 0 && yVal <= 500) || (xVal >= 500 && yVal >= 1000) || (xVal >= 0 && xVal <= 100) && (yVal >= 500) || (xVal >= 1000 && yVal >= 500)) 
+      {
+        dodged=1;
+        break;
+      } 
+      y++;     
+    }
+    return dodged;
+  }
+  
+  if(direction=="Up")
+  {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.println("Jump Forward!");
+    display.display();
+
+    int y=0;
+    while(y<=i)
+    {
+      if ((xVal >= 600 && xVal <= 1000) && (yVal >= 0 && yVal <= 500)) 
+      {
+        flag =1;
+        Serial.print("Up");
+        break;
+      }
+      else 
+      {
+        y++;
+      }
+    }
+    
+    if(flag==1)
+    {
+      dodged=1;
+    }
+    else
+    {
+      return dodged;
+    }
+
+  }
+  else if(direction=="Down")
+  {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.println("Jump Back!");
+    display.display();
+
+    int y=0;
+    while(y<=i)
+    {
+      if ((xVal >= 500 && yVal >= 1000)) 
+      {
+        flag=1;
+        Serial.print("Down");
+        break;
+      }
+      else
+      {
+        y++;
+      }
+    }
+    
+    if(flag==1)
+    {
+      dodged=1;
+    }
+    else 
+    {
+      return dodged;
+    }
+  }
+  else if(direction=="Left")
+  {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.println("Dodge Left!");
+    display.display();
+
+    int y=0;
+    while(y<=i)
+    {
+      if ((xVal >= 0 && xVal <= 100) && (yVal >= 500)) 
+      {
+        flag=1;
+        Serial.print("Left");
+        break;
+      } 
+      else 
+      {
+        y++;
+      }
+    }
+    
+    if(flag==1)
+    {
+      dodged=1;
+    }
+    else
+    {
+      return dodged;
+    }
+  }
+  else if(direction=="Right")
+  {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.println("Dodge Right!");
+    display.display();
+    
+    int y=0;
+    while(y<=i)
+    {
+      if ((xVal >= 1000 && yVal >= 500)) 
+      {
+        flag=1;
+        Serial.print("Right");
+        break;
+      }
+    }
+    
+    if(flag==1)
+    {
+      dodged=1;
+    }
+    else 
+    {
+      return dodged;
+    }
+  }
+ 
+  return dodged;
+}
+
+// Input 3: Attack
+// outputs:
+// inputs:
+bool attack(int i)
+{
+  myDFPlayer.playMp3Folder(18);
+  bool flag;
+  bool swing=0;
+  int16_t ax, ay, az;
+  int16_t gx, gy, gz;
+  int xVal = analogRead(A0);
+  int yVal = analogRead(A1);
+
+  // Read accelerometer and gyroscope data
+  mpu.getAcceleration(&ax, &ay, &az);
+  mpu.getRotation(&gx, &gy, &gz);
+
+  int y=0;
+  while(y<=i)
+  {
+    if (ay < 0) 
+    {
+      Serial.print("Swung");
+      flag=1;
+      break;
+    }
+    
+    y++;
+  }
+  
+  if(flag==1)
+  {
+    swing=1;
+  }
+  
+  return swing;
+}
+
+// function to display boss pngs
+void displaypics(int a)
+{
+  File picfile;
+  unsigned char picture[1024];
+  int v=0;
+  if(a==1)  //first boss
+  {
+    picfile= SD.open("guardian.bmp",FILE_READ);
+    while(picfile.available())
+    {
+      picture[v]=picfile.read();
+    }
+
+  }
+  else if(a==2) //second boss
+  {
+    picfile = SD.open("wither.bmp",FILE_READ);
+    while(picfile.available())
+    {
+      picture[v] = picfile.read();
+    }
+
+  }
+  else if(a==3) //final boss
+  {
+    picfile = SD.open("enderdragon.bmp",FILE_READ);
+    while(picfile.available())
+    {
+      picture[v] = picfile.read();
+    }
+  }
+  picfile.close();
+  display.clearDisplay();
+  display.drawBitmap(0,0,picture,SCREEN_WIDTH,SCREEN_HEIGHT,WHITE);
+  display.display();
+  return;
+}
+
+//function to display score
+void scoredisplay(int score)
+{
+  display.setTextSize(3);
+  display.setTextColor(WHITE);
+  display.println(score);
+  display.display();
+  return;
+}
+
+void clear()
+{
+  myDFPlayer.playMp3Folder(17);
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.println("Game Over...");
+  display.display();
+  delay(5000);
+  display.clearDisplay();
+  return;
+}
+  
+int i=3000;  //timer in milliseconds 
+int sub = 20;  //subtract from timer if player gives correct input
+int score = 0;  //score count
+int y;
+
+// main function
+void loop() 
+{
+  long action; 
+  long temp;
+  if(score < 25)
+  {
+    action = random(1,3);
+  }
+  else if(score>25 && score<50)
+  {
+    temp = random(1,10);
+    // combined inputs possibility = 30%   regular inputs possibility = 70%
+    // combined: 3 6 9   regular: 1 2 4 5 7 8 10
+    if(temp==3||temp==6||temp==9)
+    {
+      action = random(4,5);
+    }
+    else 
+    {
+      action= random(1,3);
+    }
+   
+  }
+  else if(score>50)
+  {
+    action = random(1,10);
+    // combined inputs  possibility = 50%  regular inputs possibility = 50%
+    // combined: odd  regular: even
+    temp = random(1,10);
+    if((temp%2)==0) //if even
+    {
+      action = random(1,3);
+    }
+    else  //if odd
+    {
+      action = random(4,5);
+    }
+  }
+
+  if(action ==1)
+  {
+    bool pushed;
+    y=0;
+
+    while(y<=i)
+    {
+      pushed = craft();
+      if(pushed==1)
+      {
+        break;
+      }
+      y++;
+    }
+
+    if(pushed==1)
+    {
+      score++;
+      scoredisplay(score);
+      i=i-sub;
+    }
+    else if (pushed==0)
+    {
+      clear();
+     return;
+    }
+
+  }
+  else if (action==2)
+  {
+    bool swing;
+    y=0;
+
+    swing = attack(i);
+      
+    if(swing==1)
+    {
+      score++;
+      scoredisplay(score);
+      i=i-sub;
+    }
+    else if(swing==0)
+    {
+      clear();
+      return;
+    }
+  }
+  else if(action==3)
+  {
+    bool dodged;
+    y=0;
+
+    //choosing random direction
+    long val = random(1,4);
+    String direction;
+    switch(val)
+    {
+      case 1:
+        direction="Up";
+        break;
+      case 2:
+        direction = "Down";
+        break;
+      case 3:
+        direction = "Left";
+        break;
+      case 4:
+        direction = "Right";
+        break;
+    }
+      
+    dodged = dodge(direction,i,0);
+
+    if(dodged==1)
+    {
+      score++;
+      scoredisplay(score);
+      i=i-sub;
+    }
+    else if(dodged==0)
+    {
+      clear();
+      return;
+    }
+
+  }
+  else if(action==4) //combined input 1
+  {
+    myDFPlayer.playMp3Folder(21);
+    bool flag1;
+    bool flag2;
+    flag1 = craft();
+    flag2 = dodge("Left",i,0);
+    if(flag1==true && flag2==true)
+    {
+      score++;
+      scoredisplay(score);
+      i=i-sub;
+    }
+    else 
+    {
+      clear();
+      return;
+    }
+  }
+  else if(action==5) //combined input 2
+  {
+    //stab (button and accelerometer)
+    bool flag1;
+    bool flag2;
+    flag1 = craft();
+    flag2 = attack(i);
+    if(flag1==true && flag2==true)
+    {
+      long num = random(3,7);
+      myDFPlayer.playMp3Folder(num);
+      score++;
+      scoredisplay(score);
+      i=i-sub;
+    }
+    else
+    {
+      clear();
+      return;
+    }
+  }
+
+  if(score==25 || score==50 || score==99)
+  {
+    myDFPlayer.playMp3Folder(23);
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display.println("Boss Fight!");
+    display.display();
+    delay(2000);
+    display.clearDisplay();
+    delay(500);
+    int intro_track;
+    int hit_track;
+    int death_track;
+    int moves;
+    int time;
+
+    if(score==25)
+    {
+      displaypics(1);
+      intro_track=8;
+      hit_track=9;
+      death_track=10;
+      moves=4;
+      time=2000;
+    }
+    else if(score==50)
+    {
+      displaypics(2);
+      intro_track=11;
+      hit_track=12;
+      death_track=13;
+      moves=8;
+      time=1500;
+    }
+    else if(score==99)
+    {
+      displaypics(3);
+      intro_track=14;
+      hit_track=15;
+      death_track=16;
+      moves=14;
+      time=1000;
+    }
+
+    myDFPlayer.playMp3Folder(intro_track);
+
+    //fight info
+    int m=1;
+    while (m<=moves)
+    {
+      long var = random(1,4);
+      if(var==1)  //attack
+      {
+        bool one;
+        one = attack(time);
+        if(one==true)
+        {
+          myDFPlayer.playMp3Folder(hit_track);
+          m++;
+        }
+        else
+        {
+          clear();
+          return;
+        }
+      }
+      else if(var==2) //dodge
+      {
+        bool two;
+        long val = random(1,4);
+
+        String direction;
+        switch(val)
+        {
+          case 1:
+            direction="Up";
+            break;
+          case 2:
+            direction = "Down";
+            break;
+          case 3:
+            direction = "Left";
+            break;
+          case 4:
+            direction = "Right";
+            break;
+        }
+        two = dodge(direction,time,1);
+
+        if(two==true)
+        {
+          m++;
+        }
+        else 
+        {
+          clear();
+          return;
+        }
+      }
+      else if(var==3) //parry
+      {
+        bool one;
+        bool two;
+        one=craft();
+        two=dodge("Left",time,1);
+        if(one==true && two==true)
+        {
+          m++;
+        }
+        else 
+        {
+          clear();
+          return;
+        }
+      }
+      else if(var==4) //stab
+      {
+        bool one;
+        bool two;
+        one = craft();
+        two = attack(time);
+        if(one==true && two==true)
+        {
+          myDFPlayer.playMp3Folder(hit_track);
+          m++;
+        }
+        else 
+        {
+          clear();
+          return;
+        }
+      }
+    }
+
+    myDFPlayer.playMp3Folder(death_track);
+    score++;
+    scoredisplay(score);
+    if(score==99)
+    {
+      delay(2000);
+      display.clearDisplay();
+      display.setTextSize(2);
+      display.println("You Won!!");
+    }
+  }
+  return ;
+}
